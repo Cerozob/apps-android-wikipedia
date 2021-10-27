@@ -23,7 +23,6 @@ import org.wikipedia.connectivity.NetworkConnectivityReceiver
 import org.wikipedia.dataclient.ServiceFactory
 import org.wikipedia.dataclient.SharedPreferenceCookieManager
 import org.wikipedia.dataclient.WikiSite
-import org.wikipedia.dataclient.mwapi.MwQueryResponse
 import org.wikipedia.events.ChangeTextSizeEvent
 import org.wikipedia.events.ThemeFontChangeEvent
 import org.wikipedia.language.AcceptLanguageUtil
@@ -44,29 +43,22 @@ class WikipediaApp : Application() {
     lateinit var appLanguageState: AppLanguageState
     lateinit var funnelManager: FunnelManager
     lateinit var sessionFunnel: SessionFunnel
+    lateinit var userAgent: String
+    lateinit var mainThreadHandler: Handler
     lateinit var bus: RxBus
-        private set
-
-    val remoteConfig = RemoteConfig()
-    val mainThreadHandler: Handler by lazy { Handler(mainLooper) }
-    val userAgent: String by lazy {
-        var channel = ReleaseUtil.getChannel(this)
-        channel = if (channel.isEmpty()) "" else " $channel"
-        String.format(
-            "WikipediaApp/%s (Android %s; %s; %s Build/%s)%s",
-            BuildConfig.VERSION_NAME,
-            Build.VERSION.RELEASE,
-            getString(R.string.device_type),
-            Build.MODEL,
-            Build.ID,
-            channel
-        )
-    }
 
     private val connectivityReceiver = NetworkConnectivityReceiver()
     private val activityLifecycleHandler = ActivityLifecycleHandler()
     private var wiki: WikiSite? = null
-    val tabList: MutableList<Tab> = ArrayList()
+
+    val tabList = mutableListOf<Tab>()
+
+    // handle the case where we have a single tab with an empty backstack,
+    // which shouldn't count as a valid tab:
+    val tabCount: Int
+        get() = if (tabList.size > 1 || !tabList.firstOrNull()?.backStack.isNullOrEmpty()) tabList.size else 0
+
+    val remoteConfig = RemoteConfig()
 
     var currentTheme = Theme.fallback
         set(value) {
@@ -89,13 +81,58 @@ class WikipediaApp : Application() {
     val isAnyActivityResumed: Boolean
         get() = activityLifecycleHandler.isAnyActivityResumed
 
+    val versionCode: Int
+        get() {
+            // Our ABI-specific version codes are structured in increments of 10000, so just
+            // take the actual version code modulo the increment.
+            val versionCodeMod = 10000
+            return BuildConfig.VERSION_CODE % versionCodeMod
+        }
+
+    /**
+     * Get this app's unique install ID, which is a UUID that should be unique for each install
+     * of the app. Useful for anonymous analytics.
+     * @return Unique install ID for this app.
+     */
+    val appInstallID: String
+        get() = Prefs.appInstallId ?: UUID.randomUUID().toString().also { Prefs.appInstallId = it }
+
+    val isOnline: Boolean
+        get() = connectivityReceiver.isOnline()
+
+    @get:Synchronized
+    val wikiSite: WikiSite
+        get() {
+            // TODO: why don't we ensure that the app language hasn't changed here instead of the client?
+            return wiki ?: run {
+                val lang = if (Prefs.mediaWikiBaseUriSupportsLangCode) appOrSystemLanguageCode else ""
+                val newWiki = WikiSite.forLanguageCode(lang)
+                // Kick off a task to retrieve the site info for the current wiki
+                updateFor(newWiki)
+                wiki = newWiki
+                newWiki
+            }
+        }
+
     init {
         instance = this
     }
 
     override fun onCreate() {
         super.onCreate()
+        mainThreadHandler = Handler(mainLooper)
         WikiSite.setDefaultBaseUrl(Prefs.mediaWikiBaseUrl)
+
+        val channel = ReleaseUtil.getChannel(this)
+        userAgent = String.format(
+                "WikipediaApp/%s (Android %s; %s; %s Build/%s)%s",
+                BuildConfig.VERSION_NAME,
+                Build.VERSION.RELEASE,
+                getString(R.string.device_type),
+                Build.MODEL,
+                Build.ID,
+                if (channel.isEmpty()) "" else " $channel"
+        )
 
         // Register here rather than in AndroidManifest.xml so that we can target Android N.
         // https://developer.android.com/topic/performance/background-optimization.html#connectivity-action
@@ -132,16 +169,6 @@ class WikipediaApp : Application() {
         EventPlatformClient.setUpStreamConfigs()
     }
 
-    // Our ABI-specific version codes are structured in increments of 10000, so just
-    // take the actual version code modulo the increment.
-    val versionCode: Int
-        get() {
-            // Our ABI-specific version codes are structured in increments of 10000, so just
-            // take the actual version code modulo the increment.
-            val versionCodeMod = 10000
-            return BuildConfig.VERSION_CODE % versionCodeMod
-        }
-
     /**
      * @return the value that should go in the Accept-Language header.
      */
@@ -153,38 +180,12 @@ class WikipediaApp : Application() {
         )
     }
 
-    /**
-     * Default wiki for the app
-     * You should use PageTitle.getWikiSite() to get the article wiki
-     */
-    @get:Synchronized
-    val wikiSite: WikiSite
-        get() {
-            // TODO: why don't we ensure that the app language hasn't changed here instead of the client?
-            return wiki ?: run {
-                val lang = if (Prefs.mediaWikiBaseUriSupportsLangCode) appOrSystemLanguageCode else ""
-                val newWiki = WikiSite.forLanguageCode(lang)
-                // Kick off a task to retrieve the site info for the current wiki
-                updateFor(newWiki)
-                wiki = newWiki
-                newWiki
-            }
-        }
-
-    /**
-     * Get this app's unique install ID, which is a UUID that should be unique for each install
-     * of the app. Useful for anonymous analytics.
-     * @return Unique install ID for this app.
-     */
-    val appInstallID: String
-        get() = Prefs.appInstallId ?: UUID.randomUUID().toString().also { Prefs.appInstallId = it }
-
     fun setFontSizeMultiplier(multiplier: Int): Boolean {
         val minMultiplier = resources.getInteger(R.integer.minTextSizeMultiplier)
         val maxMultiplier = resources.getInteger(R.integer.maxTextSizeMultiplier)
-        val multiplier = multiplier.coerceIn(minMultiplier, maxMultiplier)
-        if (multiplier != Prefs.textSizeMultiplier) {
-            Prefs.textSizeMultiplier = multiplier
+        val newMultiplier = multiplier.coerceIn(minMultiplier, maxMultiplier)
+        if (newMultiplier != Prefs.textSizeMultiplier) {
+            Prefs.textSizeMultiplier = newMultiplier
             bus.post(ChangeTextSizeEvent())
             return true
         }
@@ -196,6 +197,26 @@ class WikipediaApp : Application() {
             Prefs.fontFamily = fontFamily
             bus.post(ThemeFontChangeEvent())
         }
+    }
+
+    /**
+     * Gets the current size of the app's font. This is given as a device-specific size (not "sp"),
+     * and can be passed directly to setTextSize() functions.
+     * @param window The window on which the font will be displayed.
+     * @return Actual current size of the font.
+     */
+    fun getFontSize(window: Window): Float {
+        return DimenUtil.getFontSizeFromSp(window, resources.getDimension(R.dimen.textSize)) *
+                (1.0f + Prefs.textSizeMultiplier * DimenUtil.getFloat(R.dimen.textSizeMultiplierFactor))
+    }
+
+    fun unmarshalTheme(themeId: Int): Theme {
+        var result = Theme.ofMarshallingId(themeId)
+        if (result == null) {
+            L.d("Theme id=$themeId is invalid, using fallback.")
+            result = Theme.fallback
+        }
+        return result
     }
 
     fun putCrashReportProperty(key: String?, value: String?) {
@@ -216,24 +237,6 @@ class WikipediaApp : Application() {
         }
     }
 
-    // handle the case where we have a single tab with an empty backstack,
-    // which shouldn't count as a valid tab:
-    val tabCount: Int
-        get() = if (tabList.size > 1 || !tabList.firstOrNull()?.backStack.isNullOrEmpty()) tabList.size else 0
-    val isOnline: Boolean
-        get() = connectivityReceiver.isOnline()
-
-    /**
-     * Gets the current size of the app's font. This is given as a device-specific size (not "sp"),
-     * and can be passed directly to setTextSize() functions.
-     * @param window The window on which the font will be displayed.
-     * @return Actual current size of the font.
-     */
-    fun getFontSize(window: Window): Float {
-        return DimenUtil.getFontSizeFromSp(window, resources.getDimension(R.dimen.textSize)) *
-                (1.0f + Prefs.textSizeMultiplier * DimenUtil.getFloat(R.dimen.textSizeMultiplierFactor))
-    }
-
     @Synchronized
     fun resetWikiSite() {
         wiki = null
@@ -247,7 +250,7 @@ class WikipediaApp : Application() {
         Prefs.pushNotificationTokenOld = ""
         ServiceFactory.get(wikiSite).csrfToken
             .subscribeOn(Schedulers.io())
-            .flatMap { response: MwQueryResponse ->
+            .flatMap { response ->
                 val csrfToken = response.query!!.csrfToken()
                 WikipediaFirebaseMessagingService.unsubscribePushToken(csrfToken!!, Prefs.pushNotificationToken)
                     .flatMap {
@@ -264,15 +267,6 @@ class WikipediaApp : Application() {
         }
     }
 
-    fun unmarshalTheme(themeId: Int): Theme {
-        var result = Theme.ofMarshallingId(themeId)
-        if (result == null) {
-            L.d("Theme id=$themeId is invalid, using fallback.")
-            result = Theme.fallback
-        }
-        return result
-    }
-
     @SuppressLint("CheckResult")
     private fun getUserIdForLanguage(code: String) {
         if (!AccountUtil.isLoggedIn || AccountUtil.userName.isNullOrEmpty()) {
@@ -282,14 +276,14 @@ class WikipediaApp : Application() {
         ServiceFactory.get(wikiSite).userInfo
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribe({ response: MwQueryResponse ->
-                if (AccountUtil.isLoggedIn && response.query!!.userInfo != null) {
+            .subscribe({
+                if (AccountUtil.isLoggedIn && it.query!!.userInfo != null) {
                     // noinspection ConstantConditions
-                    val id = response.query!!.userInfo!!.id
+                    val id = it.query!!.userInfo!!.id
                     AccountUtil.putUserIdForLanguage(code, id)
                     L.d("Found user ID $id for $code")
                 }
-            }) { caught: Throwable? -> L.e("Failed to get user ID for $code", caught) }
+            }) { L.e("Failed to get user ID for $code", it) }
     }
 
     private fun initTabs() {
