@@ -67,6 +67,7 @@ class LinkMovementMethodExt : LinkMovementMethod {
     internal class ErrorLinkHandler internal constructor() : LinkHandler(WikipediaApp.instance) {
         override var wikiSite = WikipediaApp.instance.wikiSite
         override fun onMediaLinkClicked(title: PageTitle) {}
+        override fun onDiffLinkClicked(title: PageTitle, revisionId: Long) {}
         override fun onPageLinkClicked(anchor: String, linkText: String) {}
         override fun onInternalLinkClicked(title: PageTitle) {
             // Explicitly send everything to an external browser, since the error might be shown in
