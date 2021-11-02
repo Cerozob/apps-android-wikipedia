@@ -28,19 +28,22 @@ object TalkPageSurvey {
 
         Prefs.showTalkPageSurveyAttempts = attempts + 1
 
-        val dialog = AlertDialog.Builder(activity)
-                .setTitle(activity.getString(R.string.survey_dialog_title))
-                .setMessage(StringUtil.fromHtml(activity.getString(R.string.talk_snackbar_survey_text) +
-                        "<br/><br/><small><a href=\"https://foundation.m.wikimedia.org/wiki/Legal:Wikipedia_Android_App_Talk_Page_Survey_Privacy_Statement\">" +
-                        activity.getString(R.string.privacy_policy_description) + "</a></small>"))
+        val view = activity.layoutInflater.inflate(R.layout.dialog_talk_page_survey, null)
+        view.findViewById<TextView>(R.id.dialog_message).text = activity.getString(R.string.talk_snackbar_survey_text)
+        val linkView = view.findViewById<TextView>(R.id.dialog_link)
+        linkView.text = StringUtil.fromHtml("<a href=\"https://foundation.m.wikimedia.org/wiki/Legal:Wikipedia_Android_App_Talk_Page_Survey_Privacy_Statement\">" +
+                activity.getString(R.string.privacy_policy_description) + "</a>")
+        linkView.movementMethod = LinkMovementMethodExt { url ->
+            CustomTabsUtil.openInCustomTab(activity, url)
+        }
+
+        AlertDialog.Builder(activity)
+                .setView(view)
                 .setPositiveButton(R.string.talk_snackbar_survey_action_text) { _, _ -> takeUserToSurvey(activity) }
                 .setNegativeButton(if (attempts == 0) R.string.onboarding_maybe_later else android.R.string.cancel, null)
                 .setCancelable(false)
                 .create()
-        dialog.show()
-        dialog.findViewById<TextView>(android.R.id.message)?.movementMethod = LinkMovementMethodExt { url ->
-            CustomTabsUtil.openInCustomTab(activity, url)
-        }
+                .show()
     }
 
     private fun fallsWithinGeoRange(): Boolean {
