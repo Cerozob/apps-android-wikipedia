@@ -859,6 +859,9 @@
   <string name="talk_last_modified">&lt;b&gt;ߡߊ߬ߦߟߍ߬ߡߊ߲߬ߣߍ߲ ߞߐ߯ߟߕߊ %1$s&lt;/b&gt;߸ %2$s ߓߟߏ߫</string>
   <string name="talk_snackbar_survey_text">ߌ ߣߌ߫ ߗߋ߫ ߞߎߡߊ߫ ߞߐߜߍ ߟߊߓߊ߯ߙߊ ߟߊ߫. ߌ ߘߌ߫ ߛߴߊ߲ ߡߊߘߍ߬ߡߍ߲߫ ߠߊ߫ ߟߥߊ߬ߟߌ߬ߟߊ߲ ߠߊߢߊ߭ ߟߊ߫ ߕߍ߬ߘߍ ߘߐ߫ ߘߐ߬ߛߏ߰ߙߋ߬ߟߌ (ߛߐ߲ߘߊߗ߭\\ߛߐ߯ߝ߭ߋ߬) ߘߐ߫؟</string>
   <string name="talk_snackbar_survey_action_text">ߊ߬ ߘߊߡߌ߬ߣߊ߬ ߌߞߘߐ߫</string>
+  <string name="talk_share_talk_page">ߥߞߌߔߋߘߌߦߊ - ߘߊߘߐߖߊߥߏ ߞߎߡߊ߫ ߞߐߜߍ ߟߊ߫</string>
+  <string name="menu_option_share_talk_discussion">ߘߊߘߐߖߊߥߏ ߟߊߖߍ߲ߛߍ߲߫</string>
+  <string name="menu_option_share_talk_page">ߞߎߡߊ߫ ߞߐߜߍ ߟߊߖߍ߲ߛߍ߲߫</string>
   <string name="menu_option_share_edit">ߡߊ߬ߦߟߍ߬ߡߊ߲߬ߠߌ߲ ߠߊߖߍ߲ߛߍ߲߫</string>
   <string name="menu_option_user_contributions">%s ߟߊ߫ ߓߟߏߓߌߟߊߢߐ߲߯ߞߊ߲ ߠߎ߬</string>
   <string name="watchlist_details_watching_label">ߘߐߜߍߟߌ ߦߴߌ ߘߐ߫</string>
